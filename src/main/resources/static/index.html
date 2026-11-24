@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mini Search Engine</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+  input, textarea { padding: .5rem; font-size: 1rem; box-sizing: border-box; }
+  #q { width: 70%; }
+  button { padding: .5rem 1rem; font-size: 1rem; cursor: pointer; }
+  .hint { color: #666; font-size: .9rem; }
+  table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+  th, td { border-bottom: 1px solid #ddd; padding: .4rem; text-align: left; }
+  .msg { margin-top: .6rem; font-weight: 600; }
+  fieldset { margin-top: 1.5rem; border: 1px solid #ccc; border-radius: 6px; }
+  legend { font-weight: 600; }
+  .row { margin: .4rem 0; }
+</style>
+</head>
+<body>
+  <h1>Mini Search Engine</h1>
+  <p class="hint">Trie-based inverted index. Add <code>*</code> for prefix search (e.g. <code>tre*</code>).</p>
+
+  <fieldset><legend>Search</legend>
+    <input id="q" placeholder="type a query...">
+    <button id="go">Search</button>
+    <div id="msg" class="msg"></div>
+    <div id="info" class="hint"></div>
+    <table id="tbl" hidden>
+      <thead><tr><th>#</th><th>Page</th><th>Terms matched</th><th>Frequency</th><th>In-links</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </fieldset>
+
+  <fieldset><legend>Add a page</legend>
+    <div class="row"><input id="pname" placeholder="page name, e.g. stacks.html" size="40"></div>
+    <div class="row"><textarea id="ptext" rows="4" style="width:100%" placeholder="page text..."></textarea></div>
+    <button id="add">Add to index</button> <span id="addmsg" class="msg"></span>
+  </fieldset>
+
+  <fieldset><legend>Delete</legend>
+    <div class="row"><input id="dpage" placeholder="page name, e.g. hashing.html" size="30">
+      <button id="delpage">Delete page</button></div>
+    <div class="row"><input id="dword" placeholder="word, e.g. trie" size="30">
+      <button id="delword">Delete word</button></div>
+    <span id="delmsg" class="msg"></span>
+  </fieldset>
+
+  <fieldset><legend>Index status</legend>
+    <div id="stats" class="hint"></div>
+  </fieldset>
+
+<script>
+  const $ = id => document.getElementById(id);
+
+  async function search() {
+    const res = await fetch('/api/search?q=' + encodeURIComponent($('q').value));
+    const d = await res.json();
+    $('msg').textContent = d.message;
+    $('info').textContent =
+      (d.ignoredStopWords.length ? 'Ignored stop words: ' + d.ignoredStopWords.join(', ') + '. ' : '') +
+      (d.terms.length ? 'Terms: ' + d.terms.join(', ') : '');
+    $('rows').innerHTML = '';
+    d.results.forEach((r, i) => {
+      const tr = document.createElement('tr');
+      [i + 1, r.page, r.matchedTerms + '/' + d.terms.length, r.frequency, r.inLinks].forEach(v => {
+        const td = document.createElement('td'); td.textContent = v; tr.appendChild(td);
+      });
+      $('rows').appendChild(tr);
+    });
+    $('tbl').hidden = d.results.length === 0;
+  }
+
+  async function stats() {
+    const d = await (await fetch('/api/stats')).json();
+    $('stats').textContent = d.pages.length + ' pages (' + d.pages.join(', ') + '); ' +
+      d.distinctTerms + ' distinct terms; ' + d.trieNodes + ' trie nodes.';
+  }
+
+  async function show(res, target) {
+    const d = await res.json();
+    $(target).textContent = d.message;
+    stats();
+  }
+
+  $('go').onclick = search;
+  $('q').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
+
+  $('add').onclick = async () => {
+    const body = new URLSearchParams({ name: $('pname').value, text: $('ptext').value });
+    show(await fetch('/api/index', { method: 'POST', body }), 'addmsg');
+  };
+  $('delpage').onclick = async () => {
+    const n = $('dpage').value.trim();
+    if (!n) { $('delmsg').textContent = 'Enter a page name.'; return; }
+    show(await fetch('/api/index/' + encodeURIComponent(n), { method: 'DELETE' }), 'delmsg');
+  };
+  $('delword').onclick = async () => {
+    const w = $('dword').value.trim();
+    if (!w) { $('delmsg').textContent = 'Enter a word.'; return; }
+    show(await fetch('/api/word/' + encodeURIComponent(w), { method: 'DELETE' }), 'delmsg');
+  };
+  stats();
+</script>
+</body>
+</html>
